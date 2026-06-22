@@ -60,7 +60,50 @@ structure BigInt : sig
   val gcd    : int * int -> int                 (* always non-negative *)
   val modpow : int * int * int -> int           (* (b^e) mod m, e >= 0, m > 0 *)
   val isProbablePrime : int * int -> bool        (* (n, rounds): Miller-Rabin *)
+
+  (* roots, bitwise ops and byte serialization -- see below *)
+  val isqrt : int -> int
+  val sqrt  : int -> int
+  val nthRoot : Int.int * int -> int
+  val andb : int * int -> int   val orb  : int * int -> int
+  val xorb : int * int -> int   val notb : int -> int
+  val shl  : int * Int.int -> int   val shr : int * Int.int -> int
+  val bit : int * Int.int -> bool   val testBit : int * Int.int -> bool
+  val setBit : int * Int.int -> int   val clearBit : int * Int.int -> int
+  val popcount : int -> Int.int   val bitLength : int -> Int.int
+  val toBytes : int -> Word8Vector.vector
+  val fromBytes : Word8Vector.vector -> int
 end
+```
+
+### Roots, bit operations, and byte serialization
+
+`isqrt n` is the floor of the square root (`Domain` for `n < 0`); `sqrt` is an
+alias, and `nthRoot (k, n)` is the floor of the k-th root for `k >= 1` and
+`n >= 0`. Both satisfy the usual flooring identity, e.g. `isqrt n` is the
+greatest `r` with `r*r <= n`.
+
+The bitwise operators `andb`, `orb`, `xorb` and `notb` treat each operand as an
+**infinite two's-complement** bit string, so they agree with
+`IntInf.andb`/`orb`/`xorb`/`notb` for every sign. Shifts are arithmetic:
+`shl (n, k)` multiplies by `2^k` and `shr (n, k)` is a floored divide by `2^k`
+(matching `IntInf.<<` and `IntInf.~>>`). `bit`/`testBit`, `setBit` and
+`clearBit` address individual two's-complement bits (0-based from the LSB),
+while `popcount` and `bitLength` report the set-bit count and bit-length of the
+magnitude `|n|`.
+
+`toBytes n` serializes the magnitude `|n|` to a **minimal big-endian, unsigned**
+byte vector (no leading zero bytes; `0` becomes the empty vector), and
+`fromBytes` reads such a vector back as a value `>= 0` -- convenient for crypto
+interop. The round-trip `fromBytes (toBytes n) = n` holds for all `n >= 0`
+(e.g. `256` <-> `[0wx01, 0wx00]`).
+
+```sml
+val () = print (BigInt.toString (BigInt.isqrt (valOf (BigInt.fromString "100000000000000000000"))) ^ "\n")
+(* 10000000000 *)
+val n  = BigInt.fromInt 256
+val bs = BigInt.toBytes n                       (* #[0wx01, 0wx00] *)
+val () = print (BigInt.toString (BigInt.fromBytes bs) ^ "\n")   (* 256 *)
 ```
 
 ### Example
@@ -119,20 +162,23 @@ examples/
   sources.mlb
 test/
   harness.sml  shared assertion harness
-  test.sml     IntInf cross-check + goldens (539 checks)
+  test.sml     IntInf cross-check + goldens (1138 checks)
   entry.sml / main.sml
 tools/polybuild  Poly/ML build wrapper
 ```
 
 ## Tests
 
-539 deterministic checks: an `IntInf` cross-check of `add`/`sub`/`mul`/`~`/
+1138 deterministic checks: an `IntInf` cross-check of `add`/`sub`/`mul`/`~`/
 `abs`/`compare`/`divMod`/`quotRem`/`gcd` over a seeded random stream (including
 values well beyond `Int` range and negatives), `fromString`/`toString` round-
 trips in base 10 and radix 16/2, factorial goldens (20!, 50!, 100!), RSA-style
-`modpow` vectors, and Miller-Rabin over known primes, composites, and
-Carmichael numbers (561, 1105, 1729, ...). Run `make all-tests` to verify
-identical output under both compilers.
+`modpow` vectors, Miller-Rabin over known primes, composites, and Carmichael
+numbers (561, 1105, 1729, ...), integer roots (`isqrt`/`nthRoot` against an
+`IntInf` oracle and exact powers), two's-complement bit operations and
+arithmetic shifts cross-checked against `IntInf`, and big-endian
+`toBytes`/`fromBytes` round-trips. Run `make all-tests` to verify identical
+output under both compilers.
 
 ## License
 
