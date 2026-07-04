@@ -303,8 +303,14 @@ struct
             let val w = Word.fromInt amt in
               Harness.checkString ("shl #" ^ si ^ " by " ^ Int.toString amt)
                 (s (IntInf.<< (a, w)), B.toString (B.shl (ba, amt)));
+              (* Oracle for arithmetic (floored) right shift is `IntInf.div` by
+                 2^amt, which floors toward negative infinity and is identical on
+                 both compilers. `IntInf.~>>` is NOT used here: Poly/ML 5.9.2's
+                 `IntInf.~>>` is buggy for large negatives (it truncates toward
+                 zero, disagreeing with MLton and with the floor semantics that
+                 `B.shr` correctly implements). *)
               Harness.checkString ("shr #" ^ si ^ " by " ^ Int.toString amt)
-                (s (IntInf.~>> (a, w)), B.toString (B.shr (ba, amt)))
+                (s (IntInf.div (a, IntInf.pow (2, amt))), B.toString (B.shr (ba, amt)))
             end
         in List.app perAmt amts end
       val () = let fun loop k = if k > 8 then () else (one k; loop (k + 1)) in loop 1 end
