@@ -387,6 +387,74 @@ struct
       val () = let fun loop k = if k > 20 then () else (one k; loop (k + 1)) in loop 1 end
     in () end
 
+  (* ---- property-based tests (sml-check) ---- *)
+  fun properties () =
+    let
+      val () = Harness.section "Properties (sml-check)"
+
+      (* Generator: a signed arbitrary-magnitude IntInf, built from 4 base-10^9
+         chunks plus a sign bit (up to ~36 decimal digits, comfortably inside
+         the 40-digit budget). This mirrors this file's own randVal/randMag
+         chunking idea above, but as an sml-check generator, so it is
+         seeded/shrinkable and reproducible. *)
+      val chunk = Check.choose (0, 999999999)   (* 9 decimal digits per chunk, safe on MLton's 32-bit default int *)
+      val genMag = Check.listOfLen 4 chunk        (* up to ~36 digits *)
+      val genSign = Check.bool
+      val genBigIntInf : IntInf.int Check.gen =
+        Check.map
+          (fn (chunks, neg) =>
+             let val mag = List.foldl (fn (c, acc) => acc * 1000000000 + IntInf.fromInt c) 0 chunks
+             in if neg andalso mag <> 0 then IntInf.~ mag else mag end)
+          (Check.tuple2 (genMag, genSign))
+
+      val genPair = Check.tuple2 (genBigIntInf, genBigIntInf)
+      fun showPair (a, b) = s a ^ ", " ^ s b
+
+      (* a + b - b = a *)
+      val () =
+        Harness.check "prop: a + b - b = a"
+          (case Check.quickCheck
+                  (Check.forAll genPair showPair
+                     (fn (a, b) =>
+                        let val ba = toB a and bb = toB b
+                        in B.toString (B.sub (B.add (ba, bb), bb)) = B.toString ba end)) of
+               Check.Passed _ => true
+             | Check.Failed _ => false)
+
+      (* a * b commutes *)
+      val () =
+        Harness.check "prop: a * b commutes"
+          (case Check.quickCheck
+                  (Check.forAll genPair showPair
+                     (fn (a, b) =>
+                        let val ba = toB a and bb = toB b
+                        in B.compare (B.mul (ba, bb), B.mul (bb, ba)) = EQUAL end)) of
+               Check.Passed _ => true
+             | Check.Failed _ => false)
+
+      (* toString/fromString round-trips *)
+      val () =
+        Harness.check "prop: toString/fromString round-trips"
+          (case Check.quickCheck
+                  (Check.forAll genBigIntInf s
+                     (fn a =>
+                        let val ba = toB a
+                        in B.toString (valOf (B.fromString (B.toString ba))) = B.toString ba end)) of
+               Check.Passed _ => true
+             | Check.Failed _ => false)
+
+      (* compare agrees with IntInf compare *)
+      val () =
+        Harness.check "prop: compare agrees with IntInf compare"
+          (case Check.quickCheck
+                  (Check.forAll genPair showPair
+                     (fn (a, b) =>
+                        let val ba = toB a and bb = toB b
+                        in B.compare (ba, bb) = IntInf.compare (a, b) end)) of
+               Check.Passed _ => true
+             | Check.Failed _ => false)
+    in () end
+
   fun runAll () =
     ( conversions ()
     ; crossCheck ()
@@ -399,7 +467,8 @@ struct
     ; bitwise ()
     ; shifts ()
     ; bitProbes ()
-    ; bytes () )
+    ; bytes ()
+    ; properties () )
 
   fun run () = (Harness.reset (); runAll (); Harness.run ())
 end
